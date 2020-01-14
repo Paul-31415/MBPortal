@@ -1,4 +1,6 @@
 import * as THREE from "three";
+import { DistanceFunction } from "./distanceFunctions";
+
 
 //experimentally finding largest square root of zero
 let rz = 1e-170;
@@ -139,7 +141,7 @@ class Point {
         }
         return this.scaleEq(l / m);
     }
-    clamp(l = 0, h = 1): Point {
+    clampMag(l = 0, h = 1): Point {
         //clamps magnitude to range [l,h]
         const m = this.mag()
         if (m < l) {
@@ -153,7 +155,7 @@ class Point {
         }
         return this.copy();
     }
-    clampEq(l = 0, h = 1): Point {
+    clampMagEq(l = 0, h = 1): Point {
         const m = this.mag()
         if (m < l) {
             if (m == 0) {
@@ -167,6 +169,60 @@ class Point {
         }
         return this;
     }
+    clamp(l: Point, h: Point): Point {
+        //clamps components independently
+        return this.copy().clampEq(l, h);
+    }
+    clampEq(l: Point, h: Point): Point {
+        this.x = Math.min(h.x, Math.max(l.x, this.x));
+        this.y = Math.min(h.y, Math.max(l.y, this.y));
+        this.z = Math.min(h.z, Math.max(l.z, this.z));
+        return this;
+    }
+
+    min(...ps: Point[]): Point {
+        return this.copy().minEq(...ps);
+    }
+    minEq(...ps: Point[]): Point {
+        const r = this;
+        for (let p of ps) {
+            r.x = Math.min(r.x, p.x);
+            r.y = Math.min(r.y, p.y);
+            r.z = Math.min(r.z, p.z);
+        }
+        return r;
+    }
+    max(...ps: Point[]): Point {
+        return this.copy().maxEq(...ps);
+    }
+    maxEq(...ps: Point[]): Point {
+        const r = this;
+        for (let p of ps) {
+            r.x = Math.max(r.x, p.x);
+            r.y = Math.max(r.y, p.y);
+            r.z = Math.max(r.z, p.z);
+        }
+        return r;
+    }
+
+    func(f: (n: number) => number): Point {
+        return this.copy().funcEq(f);
+    }
+    funcEq(f: (n: number) => number): Point {
+        this.x = f(this.x);
+        this.y = f(this.y);
+        this.z = f(this.z);
+        return this;
+    }
+
+    sign(): Point {
+        return this.copy().signEq();
+    }
+    signEq(): Point {
+        return this.funcEq(Math.sign);
+    }
+
+
 
 
     removeComponent(v: Point): Point {
@@ -176,6 +232,14 @@ class Point {
     removeComponentEq(v: Point): Point {
         const m = this.dot(v) / v.mag2();
         return this.subEq(v.scale(m));
+    }
+    extractComponent(v: Point): Point {
+        const m = this.dot(v) / v.mag2();
+        return v.scale(m);
+    }
+    extractComponentEq(v: Point): Point {
+        const m = this.dot(v) / v.mag2();
+        return this.set(v.scale(m));
     }
     bounce(n: Point, r: number): Point {
         const m = this.dot(n) / n.mag2();
@@ -194,6 +258,13 @@ class Point {
         return this.subEq(n.scale(m * (1 + r)));
     }
 
+
+    lerp(p: Point, a: number): Point {
+        return this.scale(1 - a).addEq(p.scale(a));
+    }
+    lerpEq(p: Point, a: number): Point {
+        return this.scaleEq(1 - a).addEq(p.scale(a));
+    }
 
 
     get xyz(): number[] {
@@ -215,7 +286,29 @@ class Point {
         o.z = this.z;
     }
 
+    get perp(): Point {
+        return Math.abs(this.z) < Math.abs(this.x) ? new Point(this.y, -this.x, 0) : new Point(0, -this.z, this.y);
+    }
+
+    get perp2(): Point {
+        return this.perp.crossEq(this);
+    }
+
+    toUVW(o: Point): Point {
+        //decomposes o into u,v,w components based on this.perp,this.perp2,this
+        let p = this.perp;
+        let p2 = p.cross(this);
+        return new Point(o.dot(p) / p.mag2(), o.dot(p2) / p2.mag2(), o.dot(this) / this.mag2());
+    }
+    fromUVW(o: Point): Point {
+        let p = this.perp;
+        let p2 = p.cross(this);
+        return this.scale(o.z).addEq(p.scaleEq(o.x)).addEq(p2.scaleEq(o.y));
+    }
+
 }
+
+
 
 class Quaternion {
     public r: number;
@@ -396,7 +489,543 @@ class Quaternion {
 
 }
 
+class Color {
+    constructor(public r: number = 0, public g: number = 0, public b: number = 0, public a: number = 1) { }
+    get v(): THREE.Color {
+        let r = new THREE.Color();
+        r.r = this.r;
+        r.g = this.g;
+        r.b = this.b;
+        return r;
+    }
+}
+
+
+const XYZxyz_unit_vecs = [new Point(-1, 0, 0), new Point(0, -1, 0), new Point(0, 0, -1), new Point(1, 0, 0), new Point(0, 1, 0), new Point(0, 0, 1)];
+
+
+class Box implements DistanceFunction {
+    constructor(public low: Point, public high: Point) { }
+    copy(): Box {
+        return new Box(this.low.copy(), this.high.copy());
+    }
+    contains(p: Point): boolean {
+        return p.x <= this.high.x && p.y <= this.high.y && p.z <= this.high.z && p.x >= this.low.x && p.y >= this.low.y && p.z >= this.low.z;
+    }
+    clamp(p: Point): Point {
+        return p.clamp(this.low, this.high);
+    }
+    eval(p: Point, r = Infinity): number {
+        if (this.contains(p)) {
+            return Math.max(...p.sub(this.high).xyz, ...this.low.sub(p).xyz);
+        }
+        let cp = this.clamp(p).sub(p).mag2();
+        if (cp < r * r) {
+            return Math.sqrt(cp);
+        }
+        return Infinity;
+    }
+    gradient(p: Point): Point {
+        if (this.contains(p)) {
+            let id = p.sub(this.high).xyz.concat(this.low.sub(p).xyz).reduce((p, c, ci) => { if (p.v < c) { return { v: c, i: ci }; } return p; }, { v: -Infinity, i: 0 }).i;
+            return XYZxyz_unit_vecs[id].copy();
+        }
+        return this.clamp(p).subEq(p).normEq(-1);
+    }
+    boundingBox = this;
+    get boundingSphere(): Sphere {
+        return new Sphere(this.low.lerp(this.high, .5), this.low.sub(this.high).mag() / 2);
+    }
+    boundingUnion(o: Box): Box {
+        return this.copy().boundingUnionEq(o);
+    }
+    boundingUnionEq(o: Box): Box {
+        this.low.minEq(o.low);
+        this.high.maxEq(o.high);
+        return this;
+    }
+}
+class Sphere implements DistanceFunction {
+    constructor(public pos: Point, public r: number = 1) { }
+    copy(): Sphere {
+        return new Sphere(this.pos.copy(), this.r);
+    }
+    contains(p: Point): boolean {
+        return this.pos.sub(p).mag2() <= this.r * this.r;
+    }
+    eval(p: Point, rad: number = Infinity): number {
+        const m2 = p.sub(this.pos).mag2();
+        if (m2 > ((rad + this.r) ** 2)) {
+            return Infinity;
+        }
+        return Math.sqrt(m2) - this.r;
+    }
+    gradient(p: Point): Point {
+        return p.sub(this.pos).normEq();
+    }
+    get boundingBox(): Box {
+        return new Box(new Point(-this.r, -this.r, -this.r).addEq(this.pos), new Point(this.r, this.r, this.r).addEq(this.pos));
+    }
+    boundingSphere = this;
+    boundingUnion(o: Sphere): Sphere {
+        return this.copy().boundingUnionEq(o);
+    }
+    boundingUnionEq(o: Sphere): Sphere {
+        let d = this.pos.sub(o.pos);
+        let dm2 = d.mag2();
+        if (dm2 > (Math.abs(o.r - this.r) ** 2)) {
+            //one sphere isn't fully within the other
+            let dm = Math.sqrt(dm2);
+            let tot = o.r + this.r + dm;
+            //want tfar.lerp(ofar,.5);
+            // this.pos = tfar.lerp(ofar,tfrac)
+            //and o.pos = ofar.lerp(tfar,tfrac)
+            //      tfar.lerp(ofar,tfrac).lerp(ofar.lerp(tfar,tfrac),x) =  (tfar*(1-tfrac)+ofar*tfrac)*(1-x)+(ofar*(1-ofrac)+tfar*ofrac)*x
+            //    = tfar*((1-tfrac)*(1-x)+ofrac*x) + ofar*(tfrac*(1-x)+(1-ofrac)*x)
+            //want tfrac*(1-x)+(1-ofrac)*x = .5
+            //     t-tx+x-ox = .5
+            //       x       = (.5-t)/(1-o-t)
+            //               = .5* (1-t-t)/(1-t-o)
+            //              
+            let tfrac = this.r / tot;
+            let ofrac = o.r / tot;
+            this.pos.lerpEq(o.pos, (.5 - tfrac) / (1 - tfrac - ofrac));
+            this.r = tot / 2;
+            return this;
+        }
+        if (o.r > this.r) {
+            this.r = o.r;
+            this.pos.set(o.pos);
+        }
+        return this;
+    }
+}
+class Plane implements DistanceFunction {
+    constructor(public normal: Point, public distance: number) { }
+    contains(p: Point): boolean {
+        return this.eval(p) <= 0;
+    }
+    eval(p: Point, r = Infinity): number {
+        return p.dot(this.normal) - this.distance;
+    }
+    gradient(p: Point): Point {
+        return this.normal.copy();
+    }
+    bound(p: Point): Point {
+        let d = this.eval(p);
+        if (d <= 0) {
+            return p.sub(this.normal.scale(d));
+        }
+        return p.copy();
+    }
+    get boundingBox(): Box {
+        return new Box(new Point(-Infinity, -Infinity, -Infinity), new Point(Infinity, Infinity, Infinity));
+    }
+    get boundingSphere(): Sphere {
+        return new Sphere(new Point(0, 0, 0), Infinity);
+    }
+    uvw(p: Point): Point {
+        let r = this.normal.toUVW(p);
+        r.z -= this.distance;
+        return r;
+    }
+    fromUVW(p: Point): Point {
+        return this.normal.fromUVW(new Point(p.x, p.y, p.z + this.distance));
+    }
+    intersectionLine(o: Plane): Point {
+        //gets the intersection line with o in this's uv space
+        //line tangent is o.normal x this.normal in 3-space, in uv-space is something simpler
+
+        //line normal is just o.normal projected onto this
+        let line = this.normal.toUVW(o.normal);
+        //the z component is almost the line's distance term
+
+        //ok, so normalizing a line is like this:
+        // want l.xy•v=l.z  and ln.xy•v = ln.z
+        // l.z /= l.xy.mag()
+        // l.xy.normEq()
+
+        //so that means that [1,1,1] and [.1,.1,.1] are the same line,
+        //ie, z has an effect of z/(mag(xy));
+
+        //so we have u,v,w, o.dist
+
+        // intersection is at uv•p = w*o.dist-this.dist
+        // 
+
+
+        line.z = o.distance - this.distance * line.z;
+        return line;
+
+    }
+}
+
+function pseudoAngle2d(p: { x: number, y: number }): number {
+    let r = p.y / (Math.abs(p.x) + Math.abs(p.y));
+    return p.x > 0 ? r : 2 - r;
+}
+function pseudoAngleDifference(a: number, b: number): number {
+    //4 is max
+    let d = a - b;
+    if (Math.abs(d) > 2) {
+        return 4 - d;
+    }
+    return d;
+}
+function intersection2d(a: Point, b: Point): number {
+
+    const uv = toUV2d(a, b);
+    uv.y = b.y - a.y * uv.y;
+    //point is uv.x*v=uv.y
+    //so it's uv.y/uv.x
+    return uv.x == 0 ? -Infinity : uv.y / uv.x;
+}
+function toU2d(a: Point, p: { x: number, y: number }): number {
+    return (p.x * a.y - p.y * a.x) / (a.y * a.y + a.x * a.x);
+}
+function toUV2d(a: { x: number, y: number }, p: { x: number, y: number }): { x: number, y: number } {
+    let m2 = a.x * a.x + a.y * a.y;
+    return { x: (p.x * a.y - p.y * a.x) / m2, y: (a.x * p.x + a.y * p.y) / m2 };
+}
+function fromUV2d(a: { x: number, y: number }, uv: { x: number, y: number }): { x: number, y: number } {
+    return { x: (uv.x * a.y - uv.y * a.x), y: (a.x * uv.x + a.y * uv.y) };
+}
+
+
+function fromU2d(a: Point, u: number): { x: number, y: number } {
+    return { x: a.x * a.z + a.y * u, y: a.y * a.z - a.x * u };
+}
+function distSq2d(a: { x: number, y: number }, b: { x: number, y: number }): number {
+    return (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
+}
+
+function binarySearch<T>(arr: T[], v: number, f: (t: T) => number, low = 0, high: number = null): number {
+    //assuming sorted in ascending order
+    //returns index of first element ≥ v
+    if (high == null) {
+        high = arr.length;
+    }
+    while (high > low) {
+        let m = Math.floor((high + low) / 2);
+        let mi = arr[m];
+        let mv = f(mi);
+        if (mv > v) {
+            high = m;
+        } else {
+            if (mv < v) {
+                low = m + 1;
+            } else {
+                return m;
+            }
+        }
+    }
+    return low;
+}
+
+
+
+class ConvexPoly {
+    //2d convex polygon, for neighbor finding for convexHull
+    lines: Point[];
+    average: { x: number, y: number };
+    constructor(...l: Point[]) {
+        this.lines = l;
+        this.cull();
+        this.average = { x: 0, y: 0 };
+        for (let i = 0; i < this.lines.length; i++) {
+            let pu = intersection2d(this.lines[i], this.lines[(i + 1) % this.lines.length]);
+            let p = fromU2d(this.lines[i], pu == -Infinity ? 0 : pu);
+            this.average.x += p.x;
+            this.average.y += p.y;
+        }
+        if (this.lines.length > 0) {
+            this.average.x /= this.lines.length;
+            this.average.y /= this.lines.length;
+        }
+    }
+    sort(): ConvexPoly {
+        //sort by normal angle-like quantity
+        //32
+        //41
+        this.lines.sort((a, b) => { return pseudoAngle2d(a) - pseudoAngle2d(b); });
+        return this;
+    }
+    cull(): ConvexPoly {
+        this.lines = this.lines.filter((v: Point) => { return v.x * v.x + v.y * v.y > 0; });
+        this.sort();
+        //spin along the lines, deleting those that don't contrubute
+        //       X|
+        // plane X|-> normal
+        //       X|
+
+
+        //    /¯\
+        //   | x |
+        //    \_/
+        //so it's sorted like this:
+        // _ ,x/ , x|, x\,¯, /x ,|x ,\x
+        let i = 1;
+        let activeLine = 0;
+
+        while (activeLine < this.lines.length) {
+            let intersection = Infinity;
+            while (i < activeLine + this.lines.length) {
+                let al = this.lines[activeLine];
+                let il = this.lines[i % this.lines.length];
+                let dir = al.x * il.y - al.y * il.x;
+                //  al  |    il             al   il
+                // want v x - > positive, [0,-1][1,0]
+                // 0 * 0 - - 1
+                if (dir <= 0) {
+                    //next
+                    break;
+                } else {
+                    let newDist = intersection2d(this.lines[activeLine], this.lines[i % this.lines.length]);
+                    if (newDist == -Infinity) {
+                        //the other line supercedes this one iff it's z is less
+                        if (this.lines[activeLine].z > this.lines[i].z) {
+                            this.lines.splice(activeLine, 1);
+                        } else {
+                            this.lines.splice(i, 1);
+                        }
+                    } else {
+                        if (newDist < intersection) {
+                            intersection = newDist;
+                            //delete all lines from activeLine+1 to i-1
+                            let todo = i - 1 - (activeLine + 1) - this.lines.splice(activeLine + 1, i - 1 - (activeLine + 1)).length
+                            if (todo > 0) {
+                                this.lines.splice(0, todo);
+                                activeLine -= todo;
+                            }
+                            i = activeLine + 2;
+                        } else {
+                            i++;
+                        }
+                    }
+                }
+            }
+            activeLine++;
+            i = activeLine + 1;
+        }
+        return this;
+    }
+    closestPointAndLine(p: { x: number, y: number }): [{ x: number, y: number }, Point?] {
+        p = { x: p.x, y: p.y };
+        if (this.lines.length < 2) {
+            if (this.lines.length == 1) {
+                let l2: Point = null;
+                let l = this.lines[0];
+                let d = p.x * l.x + p.y * l.y - l.z;
+                if (d < 0) {
+                    p.x -= l.x * d;
+                    p.y -= l.y * d;
+                    l2 = l;
+                }
+                return [p, l2];
+            }
+            return [p];
+        }
+		/*
+        //binary search through angles to find a good candidate edge
+        let a = pseudoAngle2d({ x: p.x - this.average.x, y: p.y - this.average.y });
+        let i = binarySearch(this.lines, a, pseudoAngle2d);
+		let dir = 
+		*/
+        //just slide along edges
+        let i = 0;
+        let l = this.lines[i];
+        let u = toU2d(l, p);
+        let iu = intersection2d(this.lines[i], this.lines[(i + 1) % this.lines.length]);
+        let dir = (u > iu) ? -1 : 1; //forward in u is +i
+        while (u * dir > iu * dir) {
+            i = (i + this.lines.length + dir) % this.lines.length;
+            l = this.lines[i];
+            u = toU2d(l, p);
+            iu = intersection2d(this.lines[i], this.lines[(i + 1) % this.lines.length]);
+        }
+        //now if we've been sliding forward, we are on the edge nearest to p, one past the vertex nearest p
+        //if we've been sliding backwards, we are one before the edge nearest, 
+        i = (i + ((dir == -1) ? 1 : 0)) % this.lines.length;
+        //the side of importance is -dir
+        let i2 = (i + this.lines.length - dir) % this.lines.length;
+        iu = intersection2d(this.lines[i], this.lines[i2]);
+        l = this.lines[i];
+        let v = l.x * p.x + l.y * p.y - l.z;
+        if (v > 0) {//outside
+            return [fromU2d(l, dir * Math.max(dir * iu, dir * toU2d(l, p))), l];
+        }
+        return [p];
+    }
+    boundingEdges(dir: { x: number, y: number }): [Point, Point] {
+        //here we can binary search through angles
+        let a = pseudoAngle2d(dir);
+        let i = binarySearch(this.lines, a, pseudoAngle2d);
+        let l1 = this.lines[i % this.lines.length];
+        let l2 = this.lines[(i + this.lines.length - 1) % this.lines.length];
+        let a1 = Math.abs(pseudoAngleDifference(pseudoAngle2d(l1), a));
+        let a2 = Math.abs(pseudoAngleDifference(pseudoAngle2d(l2), a));
+        return (a1 < a2) ? [l1, l2] : [l2, l1];
+    }
+    geometry(): { x: number, y: number }[] {
+        let res: { x: number, y: number }[] = [];
+        if (this.lines.length == 0) {
+            return res;
+        }
+        if (this.lines.length == 1) {
+            return [fromU2d(this.lines[0], -1000), fromU2d(this.lines[0], 1000)];
+        }
+
+        let pline = this.lines[this.lines.length - 1];
+        for (let i = 0; i < this.lines.length; i++) {
+            let lo = this.lines[(i + this.lines.length - 1) % this.lines.length];
+            let start = intersection2d(this.lines[i], lo);
+            if (start == -Infinity) {
+                res.push(fromU2d(lo, 1000));
+                res.push(fromU2d(this.lines[i], 1000));
+            } else {
+                res.push(fromU2d(this.lines[i], start));
+            }
+        }
+        return res;
+    }
+}
+
+class ConvexHull implements DistanceFunction {
+    planes: Plane[];
+    planeNeighbors: (Point & { planeIndex: number })[][];
+    planePolys: ConvexPoly[] = [];
+    constructor(...p: Plane[]) {
+        this.planes = p;
+        this.setup();
+    }
+    setup() {
+        this.calculatePlaneNeighbors();
+        this.calculateBoundingBox();
+        this.calculateBoundingSphere();
+    }
+    calculatePlaneNeighbors(): ConvexHull {
+        this.planeNeighbors = [];
+
+        for (let i = 0; i < this.planes.length; i++) {
+            let poly: (Point & { planeIndex: number })[] = [];
+            for (let j = 0; j < this.planes.length; j++) {
+                if (i != j) {
+                    let line = this.planes[i].intersectionLine(this.planes[j]) as any;
+                    line.planeIndex = j;
+                    poly.push(line);
+                }
+            }
+            this.planePolys[i] = new ConvexPoly(...poly);
+            this.planeNeighbors[i] = this.planePolys[i].lines as (Point & { planeIndex: number })[];
+        }
+        return this;
+    }
+    findNearestSurfacePoint(p: Point, g: THREE.Object3D = null): [Point, boolean] {
+
+
+
+        let pi = 0;
+        let uvw = this.planes[pi].uvw(p);
+        let cpl = this.planePolys[pi].closestPointAndLine(uvw);
+        let gotten: { [key: number]: true } = {};
+
+        if (g != null) {
+            let points: THREE.Vector3[] = [];
+            for (let p2d of this.planePolys[pi].geometry()) {
+                (p2d as any).z = 0;
+                points.push(this.planes[pi].fromUVW(p2d as any).v);
+            }
+            let geo = new THREE.BufferGeometry();
+            geo.setFromPoints(points);
+            g.children.push(new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 4 })));
+        }
+        while (cpl[1] != null && gotten[pi] != true) {
+            gotten[pi] = true;
+            pi = (cpl[1] as (Point & { planeIndex: number })).planeIndex;
+            uvw = this.planes[pi].uvw(p);
+            cpl = this.planePolys[pi].closestPointAndLine(uvw);
+            if (g != null) {
+                let points: THREE.Vector3[] = [];
+                for (let p2d of this.planePolys[pi].geometry()) {
+                    (p2d as any).z = 0;
+                    points.push(this.planes[pi].fromUVW(p2d as any).v);
+                }
+                let geo = new THREE.BufferGeometry();
+                geo.setFromPoints(points);
+                g.children.push(new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 4 })));
+            }
+        }
+        (cpl[0] as any).z = 0;
+
+        return [this.planes[pi].fromUVW(cpl[0] as any), this.planes[pi].eval(p) < 0];
+    }
+    wireframe(o: THREE.Object3D) {
+        for (let pi in this.planes) {
+            let points: THREE.Vector3[] = [];
+            let g = this.planePolys[pi].geometry();
+            if (g.length > 0) {
+                for (let p2d of g) {
+                    (p2d as any).z = 0;
+                    points.push(this.planes[pi].fromUVW(p2d as any).v);
+                }
+                points.push(this.planes[pi].fromUVW(g[0] as any).v);
+            }
+            let geo = new THREE.BufferGeometry();
+            geo.setFromPoints(points);
+            o.children.push(new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xFF0000, linewidth: 4 })));
+        }
+    }
+
+    eval(p: Point, r = Infinity): number {
+        let res = this.findNearestSurfacePoint(p);
+        return res[0].subEq(p).mag() * (res[1] ? -1 : 1);
+    }
+    gradient(p: Point): Point {
+        let res = this.findNearestSurfacePoint(p);
+        return res[0].subEq(p).normEq(res[1] ? -1 : 1);
+    }
+    boundingBox: Box;
+    boundingPlaneDistance(p: Point): number {
+        if (this.planes.length == 0) {
+            return -Infinity;
+        }
+        let pi = 0;
+        let gotten: { [key: number]: true } = {};
+        if (this.planes.length > 1) {
+            while (gotten[pi] != true) {
+                gotten[pi] = true;
+                let uvw = this.planes[pi].uvw(p);
+                if (uvw.x == 0 && uvw.y == 0) {
+                    pi = (pi + 1) % this.planes.length;
+                    //gotten[pi] = null;
+                }
+                pi = (this.planePolys[pi].boundingEdges(uvw)[0] as (Point & { planeIndex: number })).planeIndex;
+            }
+        }
+        let uvw = this.planes[pi].uvw(p);
+        if (uvw.x == 0 && uvw.y == 0) {
+            return this.planes[pi].distance / p.mag();
+        }
+        let be = this.planePolys[pi].boundingEdges(uvw);
+        let UV = fromU2d(be[0], intersection2d(be[0], be[1])) as any;
+        UV.z = 0;
+        this.planes[pi].fromUVW(UV);
+    }
+    calculateBoundingBox() {
+        let ds: number[] = [];
+        for (var p of XYZxyz_unit_vecs) {
+            ds.push(this.boundingPlaneDistance(p));
+        }
+        this.boundingBox = new Box(new Point(ds[0], ds[1], ds[2]), new Point(ds[3], ds[4], ds[5]));
+    }
+    boundingSphere: Sphere;
+    calculateBoundingSphere() {
+        this.boundingSphere = new Sphere(new Point(0, 0, 0), Infinity);
+    }
+}
+
+
 
 export {
-    Point, Quaternion
+    Point, Quaternion, Color, Sphere, Box, ConvexHull, Plane, ConvexPoly
 }
