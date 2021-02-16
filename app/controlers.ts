@@ -23,6 +23,7 @@ class FreeCam implements Controler {
     rotation: Quaternion;
     mouseCaught: boolean;
     velocity = new Point();
+    position = new Point();
 
     constructor(public cam: THREE.PerspectiveCamera, public speed = 4, public accel = 100, public drag = 50, public mouseSpeed = Math.PI * 2 / 720) {
         this.rotation = new Quaternion();
@@ -31,6 +32,7 @@ class FreeCam implements Controler {
         this.boundku = this.keyUpCallback.bind(this);
         this.boundmm = this.mouseMoveCallback.bind(this);
         this.mouseCaught = false;
+        this.position.v = cam.position;
     }
     scaleSpeed(s: number) {
         this.speed = s;
@@ -50,14 +52,14 @@ class FreeCam implements Controler {
                 this.mouseCaught = !this.mouseCaught;
             }
         }.bind(this),
-        "Digit1": function(down: boolean) { if (down) { this.scaleSpeed(.0625); } }.bind(this),
-        "Digit2": function(down: boolean) { if (down) { this.scaleSpeed(.125); } }.bind(this),
-        "Digit3": function(down: boolean) { if (down) { this.scaleSpeed(.25); } }.bind(this),
-        "Digit4": function(down: boolean) { if (down) { this.scaleSpeed(.5); } }.bind(this),
-        "Digit5": function(down: boolean) { if (down) { this.scaleSpeed(1); } }.bind(this),
-        "Digit6": function(down: boolean) { if (down) { this.scaleSpeed(2); } }.bind(this),
-        "Digit7": function(down: boolean) { if (down) { this.scaleSpeed(4); } }.bind(this),
-        "Digit8": function(down: boolean) { if (down) { this.scaleSpeed(8); } }.bind(this),
+        "Digit1": function(down: boolean) { if (down) { this.velocity.xyz = [0, 0, 0]; this.scaleSpeed(.0625); } }.bind(this),
+        "Digit2": function(down: boolean) { if (down) { this.velocity.xyz = [0, 0, 0]; this.scaleSpeed(.25); } }.bind(this),
+        "Digit3": function(down: boolean) { if (down) { this.velocity.xyz = [0, 0, 0]; this.scaleSpeed(1); } }.bind(this),
+        "Digit4": function(down: boolean) { if (down) { this.velocity.xyz = [0, 0, 0]; this.scaleSpeed(4); } }.bind(this),
+        "Digit5": function(down: boolean) { if (down) { this.velocity.xyz = [0, 0, 0]; this.scaleSpeed(16); } }.bind(this),
+        "Digit6": function(down: boolean) { if (down) { this.velocity.xyz = [0, 0, 0]; this.scaleSpeed(64); } }.bind(this),
+        "Digit7": function(down: boolean) { if (down) { this.velocity.xyz = [0, 0, 0]; this.scaleSpeed(256); } }.bind(this),
+        "Digit8": function(down: boolean) { if (down) { this.velocity.xyz = [0, 0, 0]; this.scaleSpeed(1024); } }.bind(this),
 
 
     }
@@ -126,13 +128,13 @@ class FreeCam implements Controler {
             }
         } else {
             //componential speed cap
-            v.clampEq(0, accelPt.mag() * this.speed);
+            v.clampMagEq(0, accelPt.mag() * this.speed);
 
         }
 
 
         //apply vel
-        const position = new Point(this.cam.position);
+        const position = this.position;
 
 
         position.addEq(v.scale(delta));
@@ -243,7 +245,7 @@ class MarbleCam implements Controler {
     lookAngle: Quaternion;
     mouseCaught: boolean;
     raycaster: THREE.Raycaster;
-    constructor(public cam: THREE.PerspectiveCamera, public target: Marble, public world: THREE.Object3D = null, public mouseSpeed = Math.PI * 2 / 720, public maxCamDistance = 2, public camRoom = .1, public dir = new Point(0, 0, 1)) {
+    constructor(public cam: THREE.PerspectiveCamera, public target: Marble, public world: THREE.Object3D = null, public mouseSpeed = Math.PI * 2 / 720, public maxCamDistance = 3, public camRoom = .1, public dir = new Point(0, 0, 1)) {
         this.lookAngle = new Quaternion();
         this.lookAngle.q = new THREE.Quaternion().setFromEuler(cam.rotation);
         this.boundkd = this.keyDownCallback.bind(this);
@@ -253,12 +255,12 @@ class MarbleCam implements Controler {
         this.raycaster = new THREE.Raycaster(this.target.position.v, this.lookAngle.apply(this.dir).v, 0.01, this.maxCamDistance);
     }
     controls: any = {
-        "KeyW": { s: false, r: 1, v: new Point(0, 0, -1), t: new Point(-1, 0, 0), scale: "angularAcceleration" },
-        "KeyS": { s: false, r: 1, v: new Point(0, 0, 1), t: new Point(1, 0, 0), scale: "angularAcceleration" },
-        "KeyA": { s: false, r: 1, v: new Point(-1, 0, 0), t: new Point(0, 0, -1), scale: "angularAcceleration" },
-        "KeyD": { s: false, r: 1, v: new Point(1, 0, 0), t: new Point(0, 0, 1), scale: "angularAcceleration" },
-        "KeyE": { s: false, r: 0, v: "n", sc: 100, scale: "jumpImpulse", condition: "onGround" },
-        "KeyR": { s: false, r: 0, v: "n", sc: 100, scale: "jumpImpulse", condition: "onGround", times: 1, left: 1 },
+        "KeyW": { s: false, r: 1, roll: new Point(0, 0, -1) },
+        "KeyS": { s: false, r: 1, roll: new Point(0, 0, 1) },
+        "KeyA": { s: false, r: 1, roll: new Point(-1, 0, 0) },
+        "KeyD": { s: false, r: 1, roll: new Point(1, 0, 0) },
+        "KeyE": { s: false, r: 0, jump: 1, condition: "onGround" },
+        "KeyR": { s: false, r: 0, jump: 1, condition: "onGround", times: 1, left: 1 },
         //"KeyQ": { s: false, r: 0, v: new Point(0, -1, 0) },
     };
 
@@ -297,6 +299,13 @@ class MarbleCam implements Controler {
                                 if (c.t != null) {
                                     this.target.torque.addEq(c.t.scale(s));
                                 }
+                                if (c.roll != null) {
+                                    this.target.roll(c.roll);
+                                    this.target.dirPushed = true;
+                                }
+                                if (c.jump != null) {
+                                    this.target.jump(c.jump);
+                                }
                                 break;
                             case 1://local coords horizontally
                                 let t = this.lookAngle.swingTwistDecomp(0, 1, 0)[1];
@@ -310,6 +319,13 @@ class MarbleCam implements Controler {
                                 if (c.t != null) {
                                     this.target.torque.addEq(t.apply(c.t.scale(s)));
                                 }
+                                if (c.roll != null) {
+                                    this.target.roll(t.apply(c.roll));
+                                    this.target.dirPushed = true;
+                                }
+                                if (c.jump != null) {
+                                    this.target.jump(c.jump);
+                                }
                                 break;
                             case 2://full local coords
                                 t = this.lookAngle;
@@ -322,6 +338,13 @@ class MarbleCam implements Controler {
                                 }
                                 if (c.t != null) {
                                     this.target.torque.addEq(t.apply(c.t.scale(s)));
+                                }
+                                if (c.roll != null) {
+                                    this.target.roll(t.apply(c.roll));
+                                    this.target.dirPushed = true;
+                                }
+                                if (c.jump != null) {
+                                    this.target.jump(c.jump);
                                 }
                                 break;
                         }
@@ -343,7 +366,7 @@ class MarbleCam implements Controler {
         if (this.world != null) {
             this.raycaster.far = this.maxCamDistance + this.camRoom;
             this.raycaster.set(this.target.position.v, this.lookAngle.apply(this.dir).v);
-            const intersections = this.raycaster.intersectObject(this.world);
+            const intersections = this.raycaster.intersectObject(this.world, true);
             let i = 0;
             while (intersections.length > i && intersections[i].object == this.target.object) {
                 i++;
@@ -394,6 +417,13 @@ class MarbleCam implements Controler {
         if (this.controls[ke.code] != null) {
             this.controls[ke.code].s = true;
             this.controls[ke.code].left = this.controls[ke.code].times;
+        }
+        if (ke.code == "KeyP") {
+            this.target.timeRate = 0;
+            this.target.step();
+        }
+        if (ke.code == "KeyO") {
+            this.target.timeRate = 1;
         }
     }
     keyUpCallback(ke: KeyboardEvent): void {
