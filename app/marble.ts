@@ -11,7 +11,7 @@ var PHYSICS_STEP_SIZE = 1 / 256;
 
 
 var TIME_RATE = .5;
-var DEFAULT_RADIUS = 0.39744186046511627906976744186047 / 2;
+var DEFAULT_RADIUS = 0.39744186046511627906976744186047 / 2; //appears to be exactly 1709/4300
 {
     let p = 32;
     let r = DEFAULT_RADIUS;
@@ -147,7 +147,12 @@ type MarbleData = {
 } & Material;
 
 
-
+type Move = {
+    d: Point,
+    jump: boolean,
+    powerup: boolean,
+    
+}
 
 const DefaultMarble_MarbleData = m as MarbleData;
 
@@ -199,7 +204,20 @@ class Marble implements Sprite {
     dirPushed = false;
 
     //controls
-    roll(v: Point) {
+    rollDesiredVelocity = new Point();
+    roll(v: Point) {// v is direction to roll in
+	let currentGravityDir = this.gravityVec.norm(1);
+	let R = currentGravityDir.scale(-this.size);
+	let rollVelocity = this.angular_velocity.cross(R);
+	let currentV = rollVelocity.dot(v);
+	let desiredV = this.marbleData.maxRollVelocity;//*v.mag();
+	if (currentV*desiredV > desiredV*desiredV)
+	    desiredV = currentV; // no drag if trying to roll forwards while going very fast forwards
+	
+	this.rollDesiredVelocity.addEq(v.scale(desiredV));
+
+	
+	return;
         //control of roll in direction
         if (this.onGround) {
             //todo max roll velocity
@@ -214,17 +232,199 @@ class Marble implements Sprite {
             this.velocity.addEq(this.groundNormal.norm(Math.max(0, m * this.marbleData.jumpImpulse * CALIBRATION_SCALE.jumpImpulse / this.mass + this.velocity.dot(this.gravityVec))));
         }
     }
+    computeRollForces(){
+	let currentGravityDir = this.gravityVec.norm(1);
+	let R = currentGravityDir.scale(-this.size);
+	
+	if (this.rollDesiredVelocity.mag2()){
+	    let rsq = R.mag2();
+	    let desiredOmega = R.cross(this.rollDesiredVelocity).unscale(rsq);
+	    let aControl = desiredOmega.sub(this.angular_velocity);
+	    let aScalar = aControl.mag();
+	    if (aScalar > this.marbleData.angularAcceleration){
+		aControl.scaleEq(this.marbleData.angularAcceleration/aScalar);
+	    }
+	    //desiredOmega.scaleEq(0);
+	    //aControl.scaleEq(0);
+	    return {result:false,aControl,desiredOmega};
+	}
+	return {result:true,aControl:new Point(),desiredOmega:new Point()};
+    }
 
 
-
+    computeMoveForces(m: Move,f: Quaternion){
+	let aControl = new Point();
+	let desiredOmega = new Point();
+	let currentGravityDir = this.gravityVec.norm(1);
+	let R = currentGravityDir.scale(-this.size);
+	let rollVelocity = this.angular_velocity.cross(R);
+	let sideDir = f.apply(new Point(1, 0, 0));
+	let motionDir = f.apply(new Point(0, 0, 1));
+	let upDir = f.apply(new Point(0, 1, 0));
+	let currentYVelocity = rollVelocity.dot(motionDir);
+	let currentXVelocity = rollVelocity.dot(sideDir);
+	let mv = m.d;
+	let desiredYVelocity = this.marbleData.maxRollVelocity*mv.y;
+	let desiredXVelocity = this.marbleData.maxRollVelocity*mv.x;
+	if (desiredYVelocity != 0 || desiredXVelocity != 0){
+	    // if same dir and current V is more, don't slow down.
+	    if (currentYVelocity * desiredYVelocity > desiredYVelocity * desiredYVelocity){ 
+		desiredYVelocity = currentYVelocity;
+	    }
+	    if (currentXVelocity * desiredXVelocity > desiredXVelocity * desiredXVelocity){
+		desiredXVelocity = currentXVelocity;
+	    }
+	    let rsq = R.mag2();
+	    desiredOmega = R.cross(motionDir.scale(desiredYVelocity).addEq(sideDir.scale(desiredXVelocity))).unscale(rsq);
+	    aControl = desiredOmega.sub(this.angular_velocity);
+	    let aScalar = aControl.mag();
+	    if (aScalar > this.marbleData.angularAcceleration){
+		aControl.scaleEq(this.marbleData.angularAcceleration/aScalar);
+	    }
+	    return {result:false,aControl,desiredOmega};
+	}
+	return {result:true,aControl,desiredOmega};
+    }
 
     //physics funciton
+    //update: game physics now transcribed from https://github.com/RandomityGuy/MBHaxe/blob/master/src/Marble.hx
+    getExternalForces(t:number,m:Move,dt:number){
+	let A = new Point();
+	//if (this.mode == Finish)
+	// return this.velocity * -16;
+	// grav_dir
+	let a = this.gravityVec.scale(this.marbleData.gravity * CALIBRATION_SCALE.gravity)
+	// if helicopter
+	//  a *= 0.25
+	// for obj in level.forceObjects
+	//  a += obj.getForce(this.position) / this.mass
+	this.onGround = false;
+        this.groundNormal.xyz = [0, 0, 0];
+	//contact force = 0
+        if (this.world != null) {
+            const colisions: Colision[] = this.world.colisions(this);
+            for (let c of colisions) {
+                this.groundNormal.addEq(c.normal.scale(c.apply(this)));
+                this.onGround = true;
+		// contact force += c.force
+            }
+        }
+	if (this.onGround){
+	    let accel = 0;
+	    let dot = this.velocity.dot(this.groundNormal);
+	    if (accel > dot){
+		if (dot > 0){
+		    accel -= dot;
+		}
+		A.addEq(this.groundNormal.scale(accel/dt));
+	    }
+	}else{
+	    //if helicopter, then airAccel *= 2
+	    //axes = axes
+	    //A += airAccel * (side*m.d.x + forward*m.d.y)
+	    
+
+	}
+	
+	return A;
+    }
+    slipAmount = 0;
+    applyContactForces(dt:number,/* m: Move,*/ isCentered: boolean, aControl: Point, desiredOmega: Point, A: Point):[Point, Point]{
+	let a = new Point;
+	this.slipAmount = 0;
+	let gWorkGravityDir = this.gravityVec;
+	//find best contact point for jump direction calculation
+	//for c in contacts
+	//  c.normalForce = -c.normal.dot(A);
+	//argmax of normalForce
+	//let bestNormalForce = this.groundNormal.dot(A);
+	//let canJump = this.onGround;
+	//if (canJump && m.jump){
+	//    //todo later
+	//}
+
+	//add the normal forces of each surface
+	//let normalForce = this.groundNormal.dot(A);
+	//if (normalForce > 0 && this.groundNormal.dot(this.velocity - ground velocity) <= .0001
+	//    A.addEq(this.groundNormal.scale(normalForce))
+	let normalForce = this.groundNormal.dot(A);
+	if (this.onGround){
+	    let vAtC = this.velocity.add(this.angular_velocity.cross(this.groundNormal.scale(-this.size)));//.sub(ground velocity)
+	    let vAtCMag = vAtC.mag();
+	    let slipping = false;
+	    let aFriction = new Point(0,0,0);
+	    let AFriction = new Point(0,0,0);
+	    if (vAtCMag != 0){
+		slipping = true;
+		let friction = 0;
+		//if not start
+		friction = this.marbleData.kineticFriction; // * surface friction;
+		let angAMagnitude = 5 * friction * normalForce / (2 * this.size); //suspiciously akin to moment of inertia
+		let AMagnitude = normalForce * friction;
+		let totalDeltaV = (angAMagnitude * this.size + AMagnitude) * dt;
+		if (totalDeltaV > vAtCMag){
+		    let fraction = vAtCMag / totalDeltaV;
+		    angAMagnitude *= fraction;
+		    AMagnitude *= fraction;
+		    slipping = false;
+		}
+		let vAtCDir = vAtC.unscale(vAtCMag);
+		aFriction = this.groundNormal.scale(-1).cross(vAtCDir.scale(-1)).scale(angAMagnitude);
+		AFriction = vAtCDir.scale(-AMagnitude);
+		this.slipAmount = vAtCMag - totalDeltaV;
+	    }
+	    if (!slipping){
+		let R = gWorkGravityDir.scale(-this.size);
+		let aadd = R.cross(A).unscale(R.mag2());
+		if (isCentered){
+		    let nextOmega = this.angular_velocity.add(a.scale(dt));
+		    aControl = desiredOmega.sub(nextOmega);
+		    let aScalar = aControl.mag();
+		    if (aScalar > this.marbleData.brakingAcceleration){
+			aControl.scaleEq(this.marbleData.brakingAcceleration / aScalar);
+		    }
+		}
+		let Aadd = aControl.cross(this.groundNormal.scale(-this.size)).scale(-1);
+		let aAtCMag = aadd.cross(this.groundNormal.scale(-this.size)).add(Aadd).mag();
+		let friction2 = 0.0
+		//if not start
+		friction2 = this.marbleData.staticFriction;// * groud friction;
+		if (aAtCMag > friction2 * normalForce){
+		    friction2 = 0;
+		    //if not start
+		    friction2 = this.marbleData.kineticFriction;// * ground friction;
+		    Aadd.scaleEq(friction2 * normalForce / aAtCMag);
+		}
+		A = A.add(Aadd);
+		a = a.add(aadd);
+	    }
+	    A = A.add(AFriction);
+	    a = a.add(aFriction);
+
+	    
+	}
+	a = a.add(aControl);
+	return [A,a];
+    }
     step() {
         const dt = PHYSICS_STEP_SIZE;
         this.timeError -= PHYSICS_STEP_SIZE;
 
+	let cmf = this.computeRollForces();
+	let [a,A] = this.applyContactForces(dt,cmf.result,cmf.aControl,cmf.desiredOmega,new Point(0,0,0));
+	//let a = cmf.desiredOmega.sub(this.angular_velocity);
+	//let A = cmf.aControl;
+
+	//let a = new Point();
+	//let A = new Point();
+
+	this.force.addEq(A);
+	this.torque.addEq(a);
+	
+	
         this.position.addEq(this.velocity.scale(dt));
-        this.velocity.addEq(this.force.scale(dt / this.mass));;
+        this.velocity.addEq(this.force.scale(dt / this.mass));
+	
         this.force.set(this.gravityVec.scale(this.marbleData.gravity * CALIBRATION_SCALE.gravity));
 
         this.angle.addVelocityEq(this.angular_velocity.scale(dt));
@@ -253,7 +453,7 @@ class Marble implements Sprite {
 
 
 
-    debugVisible = { vectors: { velocity: { color: 0xffff00 }, angular_velocity: { color: 0xff4400 }, force: { color: 0x00ffff }, torque: { color: 0xff0000 } }, misc: [{ f: function(m: Marble): THREE.Vector3[] { return [m.position.add(m.groundNormal.norm(m.size)).v, m.position.add(m.groundNormal.norm(m.size)).add(m.groundNormal).v]; }, v: { color: 0xffffff } }, { f: function(m: Marble): THREE.Vector3[] { return [m.position.add(m.groundNormal.norm(-m.size)).v, m.position.add(m.groundNormal.norm(-m.size)).add(m.surfaceVelocity(m.groundNormal.norm(-1))).v]; }, v: { color: 0xffff00 } }] };
+    debugVisible = { vectors: { velocity: { color: 0xffff00 }, angular_velocity: { color: 0xff4400 }, force: { color: 0x00ffff }, torque: { color: 0xff0000 }, rollDesiredVelocity:{color: 0x000000} }, misc: [{ f: function(m: Marble): THREE.Vector3[] { return [m.position.add(m.groundNormal.norm(m.size)).v, m.position.add(m.groundNormal.norm(m.size)).add(m.groundNormal).v]; }, v: { color: 0xffffff } }, { f: function(m: Marble): THREE.Vector3[] { return [m.position.add(m.groundNormal.norm(-m.size)).v, m.position.add(m.groundNormal.norm(-m.size)).add(m.surfaceVelocity(m.groundNormal.norm(-1))).v]; }, v: { color: 0xffff00 } }] };
     animate(t: number) {
         this.position.setXYZof(this.object.position);
         this.object.rotation.setFromQuaternion(this.angle.q);
@@ -282,6 +482,7 @@ class Marble implements Sprite {
         while (this.timeError > 0) {
             this.step();
         }
+	this.rollDesiredVelocity.xyz = [0,0,0];
     }
     //helper functions for colisions
     surfaceVelocity(dir: Point): Point {

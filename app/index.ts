@@ -43,7 +43,7 @@ three_scene.add(player.object);
 
 
 //cube from docs
-var geometry = new THREE.BoxGeometry(10, .1, 1000);
+var geometry = new THREE.BoxGeometry(100, .1, 1000);
 var texture = new THREE.TextureLoader().load("resources/tmp/friction_high.jpg");
 var material = new THREE.MeshStandardMaterial({ map: texture });
 var cube = new THREE.Mesh(geometry, material);
@@ -65,7 +65,7 @@ var boxbox = boxDF.boundingBox;
 var boxgeo = new CubeMarcher(boxDF).march(boxbox.low.lerp(boxbox.high, .5), boxbox.high.sub(boxbox.low).scaleEq(.6), boxbox.high.sub(boxbox.low).scaleEq(1 / 30));
 boxgeo.computeVertexNormals();
 var box = new THREE.Mesh(boxgeo, material);
-cube.children.push(box);
+//cube.children.push(box);
 
 //triangle
 /*
@@ -139,13 +139,13 @@ function fibSpherePoints(n: number, d: number): Point[] {
     return points;
 }
 
-let d = new DifReader(fs.readFileSync("/Users/paul/Projects/MarbleBlastWithPortals/app/resources/data/interiors/beginner/test.dif")).parse();
+//let d = new DifReader(fs.readFileSync("/Users/paul/Projects/MarbleBlastWithPortals/app/resources/data/interiors/beginner/test.dif")).parse();
 
-d.interiors[0].graphic(cube);
+//d.interiors[0].graphic(cube);
 
 
 
-let intDF = /*new ConvexPoly(new Plane(new Point(0, 2, 0), .3));*/new ConvexHull(true);
+//let intDF = /*new ConvexPoly(new Plane(new Point(0, 2, 0), .3));*/new ConvexHull(true);
 /*intDF.setFromPlanes(/*new Plane(new Point(0, 0, -1), .625),
     new Plane(new Point(-1, 0, 0), 8),
     new Plane(new Point(-0.7071068286895752, -0.7071068286895752, 0), 7.326048851013184),
@@ -165,28 +165,28 @@ let intDF = /*new ConvexPoly(new Plane(new Point(0, 2, 0), .3));*/new ConvexHull
 //intDF.wireframe(cube);
 //let bb = intDF.boundingBox;
 //let r = bb.high.sub(bb.low);
-
+/*
 let intMat = new THREE.MeshStandardMaterial({ color: 0x808080 });
 intMat.side = THREE.DoubleSide;
-let intGeo = intDF.geometry();//*/new CubeMarcher(intDF).march(new Point(0, 0, 0), new Point(2.5, 2.5, 2.5), 0.0225);
+let intGeo = intDF.geometry();//* /new CubeMarcher(intDF).march(new Point(0, 0, 0), new Point(2.5, 2.5, 2.5), 0.0225);
 intGeo.computeVertexNormals();
 let intG = new THREE.Object3D();
 let int = new THREE.Mesh(intGeo, intMat);
 intG.children.push(int);
 cm.objs.push(new ColDist(intDF));
 
-cube.children.push(intG);
+//cube.children.push(intG);
 
 function tria(p: Plane): THREE.BufferGeometry {
     let g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([...p.fromUVW(new Point(0, 0, 0)).xyz, ...p.fromUVW(new Point(3, 0, 0)).xyz, ...p.fromUVW(new Point(0, 3, 0)).xyz]), 3));
     return g;
 }
-for (let i = 0; i < 0/*d.interiors[0].planes.length/* 0/*d.interiors[0].convexHulls.length*/; i++) {
-    cube.children.push(new THREE.Mesh(tria(d.interiors[0].planes[i]), intMat));
+for (let i = 0; i < 0/*d.interiors[0].planes.length/* 0/*d.interiors[0].convexHulls.length* /; i++) {
+    //cube.children.push(new THREE.Mesh(tria(d.interiors[0].planes[i]), intMat));
 }
 console.log(intDF);
-
+*/
 
 
 
@@ -207,6 +207,86 @@ cube.children.push(tint);
 cm.objs.push(new ColDist(ti));
 
 //*/
+
+
+
+
+//portal
+
+let squareGeometry = new THREE.Geometry(); 
+squareGeometry.vertices.push(new THREE.Vector3(-1.0,  1.0, 0.0)); 
+squareGeometry.vertices.push(new THREE.Vector3( 1.0,  1.0, 0.0)); 
+squareGeometry.vertices.push(new THREE.Vector3( 1.0, -1.0, 0.0)); 
+squareGeometry.vertices.push(new THREE.Vector3(-1.0, -1.0, 0.0)); 
+squareGeometry.faces.push(new THREE.Face3(0, 1, 2));
+squareGeometry.faceVertexUvs[0][0] = [
+        new THREE.Vector2( 1, 1 ),		
+        new THREE.Vector2( 0, 1 ),		
+        new THREE.Vector2( 0, 0 )		
+    ];
+squareGeometry.faces.push(new THREE.Face3(0, 2, 3));
+squareGeometry.faceVertexUvs[0][1] = [
+        new THREE.Vector2( 1, 1 ),		
+        new THREE.Vector2( 0, 0 ),		
+        new THREE.Vector2( 1, 0 )
+    ];
+
+
+let port1rts = [new THREE.WebGLRenderTarget(512,512),new THREE.WebGLRenderTarget(512,512)];//width height
+let port1cam = new THREE.PerspectiveCamera(1,1);
+
+
+let squareMaterial = new THREE.MeshBasicMaterial({map: port1rts[1].texture});
+let squareMesh = new THREE.Mesh( squareGeometry, squareMaterial );
+squareMesh.position.copy(new THREE.Vector3(0,1,0));
+squareMesh.updateMatrix();
+three_scene.add(squareMesh);
+
+class portalRenderer{
+    rts:[THREE.WebGLRenderTarget,THREE.WebGLRenderTarget];
+    transform: AffineTransform;
+    constructor(w=512,h=512){
+	this.transform = new AffineTransform();
+	this.rts = [new THREE.WebGLRenderTarget(w,h),new THREE.WebGLRenderTarget(w,h)];
+	
+    }
+
+    function prerender(mats:any){
+
+    }
+    
+    port1cam.copy(three_camera);
+    port1rts = [port1rts[1],port1rts[0]];
+    squareMaterial.map = port1rts[1].texture;
+    three_renderer.setRenderTarget(port1rts[0]);
+    three_renderer.render(three_scene, port1cam);
+    three_renderer.setRenderTarget(null);
+    squareMaterial.map = port1rts[0].texture;
+    three_renderer.render(three_scene, three_camera);
+    oldTime = time;
+    
+    
+    
+    
+    
+}
+
+    
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -336,7 +416,7 @@ function animate(time: number) {
 
     //debugger
     debugLine.children = [];
-    debugPath.setFromPoints([player.position.v, intDF.gradient(player.position).normEq(-intDF.eval(player.position)).v]);
+    //debugPath.setFromPoints([player.position.v, intDF.gradient(player.position).normEq(-intDF.eval(player.position)).v]);
     /*debugGL.clear();
     mp.x += mp.y / 100;
     mp.y -= mp.x / 100;
@@ -357,7 +437,13 @@ function animate(time: number) {
     fpsMeter.text += "\npos:" + player.position.func(function(x: number): number { return Math.floor(x * 100) / 100 }).xyz;
 
 
-
+    port1cam.copy(three_camera);
+    port1rts = [port1rts[1],port1rts[0]];
+    squareMaterial.map = port1rts[1].texture;
+    three_renderer.setRenderTarget(port1rts[0]);
+    three_renderer.render(three_scene, port1cam);
+    three_renderer.setRenderTarget(null);
+    squareMaterial.map = port1rts[0].texture;
     three_renderer.render(three_scene, three_camera);
     oldTime = time;
 }
@@ -382,12 +468,12 @@ const keyCallbacks: any = {
         debugger;
         /*intDF.planes = [new Plane(new Point(0, -1, 0), 10), new Plane(new Point(.1, 1, 0), 0), new Plane(new Point(-.1, 1, -.1), 0), new Plane(new Point(-.1, 1, .1), 0)];
           intDF.setup();*/
-        intDF.addPoints(new Point(Math.random() * 2, Math.random() * 2, Math.random() * 2));
-        intGeo = intDF.geometry();//*/new CubeMarcher(intDF).march(new Point(0, 0, 0), new Point(2.5, 2.5, 2.5), 0.0225);
-        intGeo.computeVertexNormals();
-        intG.children = [];
-        let int = new THREE.Mesh(intGeo, intMat);
-        intG.children.push(int);
+        //intDF.addPoints(new Point(Math.random() * 2, Math.random() * 2, Math.random() * 2));
+        //intGeo = intDF.geometry();//*/new CubeMarcher(intDF).march(new Point(0, 0, 0), new Point(2.5, 2.5, 2.5), 0.0225);
+        //intGeo.computeVertexNormals();
+        //intG.children = [];
+        //let int = new THREE.Mesh(intGeo, intMat);
+        //intG.children.push(int);
         //intDF.addPoints(new Point2D(1, 0), new Point2D(-1, 0), new Point2D(0, 1), new Point2D(0, -10));
         //int.geometry = intDF.geometry();
 
@@ -399,3 +485,15 @@ function keyPressedCallback(ke: KeyboardEvent) {
     }
 }
 document.addEventListener("keydown", keyPressedCallback);
+
+
+
+
+
+
+
+
+
+
+
+

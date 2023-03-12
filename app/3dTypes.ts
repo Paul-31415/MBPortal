@@ -68,6 +68,13 @@ class Point2D {
         this.x *= s; this.y *= s;
         return this;
     }
+    unscale(s: number): Point2D {
+        return new Point2D(this.x / s, this.y / s);
+    }
+    unscaleEq(s: number): Point2D {
+        this.x /= s; this.y /= s;
+        return this;
+    }
     mul(o: Point2D): Point2D {
         return new Point2D(this.x * o.x, this.y * o.y);
     }
@@ -335,6 +342,13 @@ class Point implements DistanceFunction {
     }
     scaleEq(s: number): Point {
         this.x *= s; this.y *= s; this.z *= s;
+        return this;
+    }
+    unscale(s: number): Point {
+        return new Point(this.x / s, this.y / s, this.z / s);
+    }
+    unscaleEq(s: number): Point {
+        this.x /= s; this.y /= s; this.z /= s;
         return this;
     }
     mul(o: Point): Point {

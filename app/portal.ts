@@ -6,6 +6,8 @@ import { Point, AffineTransform } from "./3dTypes";
 
 class Portal {
 
+    
+    
 }
 
 
@@ -14,7 +16,7 @@ class PortalTexture {
 
     constructor(public transform: AffineTransform) { }
 
-
+    
 
 
 
