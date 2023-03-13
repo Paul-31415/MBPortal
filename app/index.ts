@@ -213,23 +213,15 @@ cm.objs.push(new ColDist(ti));
 
 //portal
 
-let squareGeometry = new THREE.Geometry(); 
-squareGeometry.vertices.push(new THREE.Vector3(-1.0,  1.0, 0.0)); 
-squareGeometry.vertices.push(new THREE.Vector3( 1.0,  1.0, 0.0)); 
-squareGeometry.vertices.push(new THREE.Vector3( 1.0, -1.0, 0.0)); 
-squareGeometry.vertices.push(new THREE.Vector3(-1.0, -1.0, 0.0)); 
-squareGeometry.faces.push(new THREE.Face3(0, 1, 2));
-squareGeometry.faceVertexUvs[0][0] = [
-        new THREE.Vector2( 1, 1 ),		
-        new THREE.Vector2( 0, 1 ),		
-        new THREE.Vector2( 0, 0 )		
-    ];
-squareGeometry.faces.push(new THREE.Face3(0, 2, 3));
-squareGeometry.faceVertexUvs[0][1] = [
-        new THREE.Vector2( 1, 1 ),		
-        new THREE.Vector2( 0, 0 ),		
-        new THREE.Vector2( 1, 0 )
-    ];
+let squareGeometry = new THREE.BufferGeometry();
+squareGeometry.setAttribute('position',new THREE.BufferAttribute(new Float32Array([
+    -1.0,  1.0, 0.0,
+    1.0,  1.0, 0.0,
+    1.0, -1.0, 0.0,
+	-1.0, -1.0, 0.0]),3));
+squareGeometry.setIndex([0,1,2,0,2,3]);
+squareGeometry.setAttribute("uv",new THREE.BufferAttribute(new Float32Array([
+    1,1, 0,1, 0,0, 1,0,]),2));
 
 
 let port1rts = [new THREE.WebGLRenderTarget(512,512),new THREE.WebGLRenderTarget(512,512)];//width height
@@ -244,17 +236,25 @@ three_scene.add(squareMesh);
 
 class portalRenderer{
     rts:[THREE.WebGLRenderTarget,THREE.WebGLRenderTarget];
+    cam:THREE.PerspectiveCamera;
     transform: AffineTransform;
-    constructor(w=512,h=512){
+    constructor(w=512,h=512x){
 	this.transform = new AffineTransform();
 	this.rts = [new THREE.WebGLRenderTarget(w,h),new THREE.WebGLRenderTarget(w,h)];
-	
-    }
-
-    function prerender(mats:any){
-
+	this.cam = new THREE.PerspectiveCamera();
     }
     
+    prerender(material:THREE.MeshBasicMaterial,scene=three_scene,cam=three_camera){
+	material.map = this.rts[1].texture;
+	three_renderer.setRenderTarget(this.rts[0]);
+	this.cam.copy(cam);
+	three_renderer.render(scene,this.cam);
+	three_renderer.setRenderTarget(null);
+	material.map = this.rts[0].texture;
+	let a = this.rts.pop();let b = this.rts.pop();
+	this.rts.push(a,b);
+    }
+    /*
     port1cam.copy(three_camera);
     port1rts = [port1rts[1],port1rts[0]];
     squareMaterial.map = port1rts[1].texture;
@@ -264,7 +264,7 @@ class portalRenderer{
     squareMaterial.map = port1rts[0].texture;
     three_renderer.render(three_scene, three_camera);
     oldTime = time;
-    
+    */
     
     
     
