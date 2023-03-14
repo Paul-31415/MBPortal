@@ -230,6 +230,7 @@ let port1cam = new THREE.PerspectiveCamera(1,1);
 
 
 let squareMaterial = new THREE.MeshBasicMaterial({map: port1rts[1].texture});
+let squareMaterial2 = new THREE.MeshBasicMaterial({map: port1rts[1].texture});
 let squareMesh = new THREE.Mesh( squareGeometry, squareMaterial );
 squareMesh.position.copy(new THREE.Vector3(2,1,3));
 squareMesh.scale.copy(new THREE.Vector3(3,3,3));
@@ -237,6 +238,12 @@ squareMesh.quaternion.fromArray([1,2,3,4],0).normalize();
 squareMesh.updateMatrix();
 three_scene.add(squareMesh);
 
+let squareMesh2 = new THREE.Mesh( squareGeometry, squareMaterial2 );
+squareMesh2.position.copy(new THREE.Vector3(2,1,5));
+//squareMesh2.scale.copy(new THREE.Vector3(3,3,3));
+squareMesh2.quaternion.fromArray([0,1,0,0],0).normalize();
+squareMesh2.updateMatrix();
+three_scene.add(squareMesh2);
 class portalRenderer{
     rts:[THREE.WebGLRenderTarget,THREE.WebGLRenderTarget];
     cam:THREE.PerspectiveCamera;
@@ -245,8 +252,8 @@ class portalRenderer{
 	this.rts = [new THREE.WebGLRenderTarget(w,h),new THREE.WebGLRenderTarget(w,h)];
 	this.cam = new THREE.PerspectiveCamera();
     }
-    epsilon = 0e-6;
-    prerender(mesh:THREE.Mesh,scene=three_scene,cam=three_camera){
+    epsilon = -1e-4;
+    prerender(mesh:THREE.Mesh,dest:THREE.Mesh,scene=three_scene,cam=three_camera){
 	//let mat = this.transform.v;
 	//let mat = this.self.matrixWorld / this.other.matrixWorld;
 	//
@@ -262,15 +269,37 @@ class portalRenderer{
         this.cam.filmGauge = this.meshWidth;
         this.cam.setFocalLength(this.cam.position.z);
         this.cam.setViewOffset(this.meshWidth,this.meshHeight,-this.cam.position.x,this.cam.position.y,this.meshWidth,this.meshHeight);
-        //this.cam.filmGague = 1;
-        //this.cam.filmOffset = -this.cam.position.x;
-        //this.cam.fov;
         this.cam.near = this.cam.position.z+this.epsilon;
         this.cam.updateProjectionMatrix();
-        this.cam.position.copy(cam.position);
+
         //mat.invert();
+        //
+        //mat.multiply(dest.matrixWorld);
+        //mat.setPosition(0,0,0);
+        //this.cam.projectionMatrix.premultiply(mat);
+
+        mat.makeRotationY(Math.PI);
+        //mat.copy(mesh.matrixWorld);
+        mat.premultiply(dest.matrixWorld);
+
+        //mat.elements[8] *= -1;
+        //mat.elements[9] *= -1;
+        //mat.elements[10] *= -1;
+        //mat.elements[11] *= -1;
+        
+        //mat.elements[12] *= -1;
+        //mat.elements[13] *= -1;
+        //mat.elements[14] *= -1;
+        //mat.elements[15] *= -1;
+        
+        this.cam.position.applyMatrix4(mat);
+        
         mat.setPosition(0,0,0);
+        mat.invert();
         this.cam.projectionMatrix.multiply(mat);
+        //mat.invert();
+
+        
         
         
         //this.cam.copy(cam);
@@ -280,14 +309,14 @@ class portalRenderer{
         
 	//this.cam.projectionMatrix.compose(
 
-        let v = mesh.visible;
-        mesh.visible = false;
+        //let v = dest.visible;
+        //dest.visible = false;
         
 	three_renderer.render(scene,this.cam);
 	three_renderer.setRenderTarget(null);
 	material.map = this.rts[0].texture;
 
-        mesh.visible = v;
+        //dest.visible = v;
         
 	let a = this.rts.pop();let b = this.rts.pop();
 	this.rts.push(a,b);
@@ -310,6 +339,7 @@ class portalRenderer{
 }
 
 let portal = new portalRenderer(new AffineTransform(),1024,1024);
+let portal2 = new portalRenderer(new AffineTransform(),1024,1024);
 
     
 
@@ -476,7 +506,8 @@ function animate(time: number) {
     fpsMeter.text += "\npos:" + player.position.func(function(x: number): number { return Math.floor(x * 100) / 100 }).xyz;
 
 
-    portal.prerender(squareMesh);
+    portal.prerender(squareMesh,squareMesh2);
+    portal2.prerender(squareMesh2,squareMesh);
     //port1cam.copy(three_camera);
     //port1rts = [port1rts[1],port1rts[0]];
     //squareMaterial.map = port1rts[1].texture;
