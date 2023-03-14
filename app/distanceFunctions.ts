@@ -69,6 +69,41 @@ let maxMag = function(...ps: Point[]): Point {
     }
     return m;
 }
+export function triBarycentric(p:Point,a:Point,b:Point,c:Point):Point{
+    //signed ratio of areas
+    let ap = a.sub(p);
+    let bp = b.sub(p);
+    let cp = c.sub(p);
+    let nor = a.sub(c).cross(b.sub(c));
+    let ab = ap.cross(bp);
+    let bc = bp.cross(cp);
+    let ca = cp.cross(ap);
+    return new Point(bc.dot(nor),ca.dot(nor),ab.dot(nor)).unscaleEq(nor.mag2());
+}
+export function triNearest(p:Point,a:Point,b:Point,c:Point):Point{
+    let ba = b.sub(a); let pa = p.sub(a);
+    let cb = c.sub(b); let pb = p.sub(b);
+    let ac = a.sub(c); let pc = p.sub(c);
+    let nor = cb.cross(ac);
+    nor.unscaleEq(nor.mag2());
+
+    let x = pb.cross(pc).dot(nor);
+    let y = pc.cross(pa).dot(nor);
+    let z = pa.cross(pb).dot(nor);
+    if (x >= 0 && y >= 0 && z >= 0){
+        return new Point(x,y,z).recompose(a,b,c);
+    }
+    let ma = pa.mag2();
+    let mb = pb.mag2();
+    let mc = pc.mag2();
+
+    let f = ma > mb? (ma > mc ? 0 : 2) : (mb > mc ? 1 : 2);
+    let l = [cb,ac,ba][f];
+    let o = [b,c,a][f];
+    let po = [pb,pc,pa][f];
+    return o.add(l.scale(clamp(l.component(po),0,1)));
+}
+
 
 class df_Tri implements DistanceFunction {
     constructor(public a: Point, public b: Point, public c: Point) { }

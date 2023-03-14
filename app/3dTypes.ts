@@ -498,8 +498,10 @@ class Point implements DistanceFunction {
         return this.funcEq(Math.sign);
     }
 
-
-
+    component(v:Point):number{
+        return this.dot(v)/this.mag2();
+    }
+    
 
     removeComponent(v: Point): Point {
         const m = this.dot(v) / v.mag2();
@@ -576,7 +578,8 @@ class Point implements DistanceFunction {
     get perp2(): Point {
         return ((Math.abs(this.z) < Math.abs(this.x) ? new Point(this.y, -this.x, 0) : new Point(0, -this.z, this.y)).crossEq(this).crossEq(this)).normEq(this.mag());
     }
-
+    
+    
     toUVW(o: Point): Point {
         //decomposes o into u,v,w components based on this.perp,this.perp2,this
         let p = this.perp;
@@ -589,6 +592,16 @@ class Point implements DistanceFunction {
         return this.scale(o.z).addEq(p.scaleEq(o.x)).addEq(p2.scaleEq(o.y));
     }
 
+    
+    decompose(a:Point,b:Point,c:Point):Point{
+        return new Point(this.dot(a) / a.mag2(),
+                         this.dot(b) / b.mag2(),
+                         this.dot(c) / c.mag2());
+    }
+    recompose(a:Point,b:Point,c:Point):Point{
+        return a.scale(this.x).addEq(b.scale(this.y)).addEq(c.scale(this.z));
+    }
+    
 
     eval(p: Point, r = Infinity, t: AffineTransform = null): number {
         let pt = t == null ? this : t.apply(this);
@@ -616,7 +629,7 @@ class Point implements DistanceFunction {
         this.x = p.x; this.y = p.y;
     }
 
-    //as Line2D
+    //as Line2D (dual)
     l_toUV(p: Point2D): Point2D {
         //line is this.xy•p = this.z
         let r = this.xy.toUV(p);

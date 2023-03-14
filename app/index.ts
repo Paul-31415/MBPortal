@@ -16,6 +16,7 @@ let three_renderer = new THREE.WebGLRenderer({ alpha: true });
 three_renderer.setSize(window.innerWidth, window.innerHeight);
 three_renderer.setPixelRatio(window.devicePixelRatio ? window.devicePixelRatio : 1);
 
+let dTHREE = THREE;
 
 var player = new Marble(new Point(0, 2, 0));
 var pcam = new MarbleCam(three_camera, player);
@@ -25,7 +26,7 @@ three_scene.add(player.object);
 
 //skybox
 {
-    const loader = new THREE.CubeTextureLoader();
+    const loader = new dTHREE.CubeTextureLoader();
     const texture = loader.load([
         'resources/skies/sky_RT.jpg',
         'resources/skies/sky_LF.jpg',
@@ -219,9 +220,9 @@ squareGeometry.setAttribute('position',new THREE.BufferAttribute(new Float32Arra
     1.0,  1.0, 0.0,
     1.0, -1.0, 0.0,
 	-1.0, -1.0, 0.0]),3));
-squareGeometry.setIndex([0,1,2,0,2,3]);
+squareGeometry.setIndex([0,2,1,0,3,2]);
 squareGeometry.setAttribute("uv",new THREE.BufferAttribute(new Float32Array([
-    1,1, 0,1, 0,0, 1,0,]),2));
+    0,1, 1,1, 1,0, 0,0,]),2));
 
 
 let port1rts = [new THREE.WebGLRenderTarget(512,512),new THREE.WebGLRenderTarget(512,512)];//width height
@@ -230,27 +231,66 @@ let port1cam = new THREE.PerspectiveCamera(1,1);
 
 let squareMaterial = new THREE.MeshBasicMaterial({map: port1rts[1].texture});
 let squareMesh = new THREE.Mesh( squareGeometry, squareMaterial );
-squareMesh.position.copy(new THREE.Vector3(0,1,0));
+squareMesh.position.copy(new THREE.Vector3(2,1,3));
+squareMesh.scale.copy(new THREE.Vector3(3,3,3));
 squareMesh.updateMatrix();
 three_scene.add(squareMesh);
 
 class portalRenderer{
     rts:[THREE.WebGLRenderTarget,THREE.WebGLRenderTarget];
     cam:THREE.PerspectiveCamera;
-    transform: AffineTransform;
-    constructor(w=512,h=512x){
-	this.transform = new AffineTransform();
+    constructor(/*public self:THREE.Object3D,public other:THREE.Object3D,*/public transform:AffineTransform,w=512,h=512,public meshWidth=2,public meshHeight=2){
+	
 	this.rts = [new THREE.WebGLRenderTarget(w,h),new THREE.WebGLRenderTarget(w,h)];
 	this.cam = new THREE.PerspectiveCamera();
     }
-    
-    prerender(material:THREE.MeshBasicMaterial,scene=three_scene,cam=three_camera){
+    epsilon = 0e-6;
+    prerender(mesh:THREE.Mesh,scene=three_scene,cam=three_camera){
+	//let mat = this.transform.v;
+	//let mat = this.self.matrixWorld / this.other.matrixWorld;
+	//
+        //
+        //      •<\-z
+        //        \ \
+        //         \  | 
+        //          \ |
+        //           \|  
+        //
+        let material = mesh.material;
 	material.map = this.rts[1].texture;
 	three_renderer.setRenderTarget(this.rts[0]);
-	this.cam.copy(cam);
+
+        let mat = new THREE.Matrix4().copy(mesh.matrixWorld);
+        mat.invert();
+        
+        this.cam.position.copy(cam.position).applyMatrix4(mat);
+        this.cam.filmGauge = this.meshWidth;
+        this.cam.setFocalLength(this.cam.position.z);
+        this.cam.setViewOffset(this.meshWidth,this.meshHeight,-this.cam.position.x,this.cam.position.y,this.meshWidth,this.meshHeight);
+        //this.cam.filmGague = 1;
+        //this.cam.filmOffset = -this.cam.position.x;
+        //this.cam.fov;
+        this.cam.updateProjectionMatrix();
+        this.cam.near = this.cam.position.z+this.epsilon;
+        mat.invert();
+        this.cam.position.applyMatrix4(mat);
+        
+        //this.cam.copy(cam);
+	//this.cam.matrixWorld.copy(camMat);
+	//this.cam.projectionMatrix.copy(cam.projectionMatrix);
+        
+        
+	//this.cam.projectionMatrix.compose(
+
+        let v = mesh.visible;
+        mesh.visible = false;
+        
 	three_renderer.render(scene,this.cam);
 	three_renderer.setRenderTarget(null);
 	material.map = this.rts[0].texture;
+
+        mesh.visible = v;
+        
 	let a = this.rts.pop();let b = this.rts.pop();
 	this.rts.push(a,b);
     }
@@ -271,7 +311,8 @@ class portalRenderer{
     
 }
 
-    
+let portal = new portalRenderer(new AffineTransform(),1024,1024);
+
     
 
 
@@ -437,13 +478,14 @@ function animate(time: number) {
     fpsMeter.text += "\npos:" + player.position.func(function(x: number): number { return Math.floor(x * 100) / 100 }).xyz;
 
 
-    port1cam.copy(three_camera);
-    port1rts = [port1rts[1],port1rts[0]];
-    squareMaterial.map = port1rts[1].texture;
-    three_renderer.setRenderTarget(port1rts[0]);
-    three_renderer.render(three_scene, port1cam);
-    three_renderer.setRenderTarget(null);
-    squareMaterial.map = port1rts[0].texture;
+    portal.prerender(squareMesh);
+    //port1cam.copy(three_camera);
+    //port1rts = [port1rts[1],port1rts[0]];
+    //squareMaterial.map = port1rts[1].texture;
+    //three_renderer.setRenderTarget(port1rts[0]);
+    //three_renderer.render(three_scene, port1cam);
+    //three_renderer.setRenderTarget(null);
+    //squareMaterial.map = port1rts[0].texture;
     three_renderer.render(three_scene, three_camera);
     oldTime = time;
 }

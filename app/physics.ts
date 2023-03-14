@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { Point } from "./3dTypes";
 import { Material, defaultMaterial } from "./material";
 import { Marble, PHYSICS_STEP_SIZE, CALIBRATION_SCALE } from "./marble";
-import { DistanceFunction } from "./distanceFunctions";
+import { DistanceFunction, triNearest, triBarycentric } from "./distanceFunctions";
 
 
 
@@ -164,11 +164,28 @@ interface WorldObject {
 }
 
 
-function faces(mesh: THREE.Mesh): THREE.Face3[] {
-    if ((mesh.geometry as THREE.Geometry).faces != null) {
-        return (mesh.geometry as THREE.Geometry).faces
-    } else {
-        return new THREE.Geometry().fromBufferGeometry((mesh.geometry as THREE.BufferGeometry)).faces;
+//import { Face, VertexNode} from 'three/addons/math/ConvexHull.js';
+
+function readPoint(arr: THREE.Float32BufferAttribute, i:number):Point{
+    return new Point(arr.getX(i),arr.getY(i),arr.getZ(i));
+}
+
+function* faces(mesh: THREE.Mesh) {
+    //if ((mesh.geometry as THREE.Geometry).faces != null) {
+    //    return (mesh.geometry as THREE.Geometry).faces
+    //} else {
+    //    return new THREE.Geometry().fromBufferGeometry((mesh.geometry as THREE.BufferGeometry)).faces;
+    //}
+    let geo = (mesh.geometry as THREE.BufferGeometry);
+    let pos = geo.attributes.position;
+    if (geo.index === null){
+	for (let i = 0; i < pos.count; i+= 3){
+            yield {a:readPoint(pos,i),b:readPoint(pos,i+1),c:readPoint(pos,i+2)};
+        }
+    }else{
+        for (let i = 0; i < geo.index.count; i+= 3){
+            yield {a:readPoint(pos,geo.index.getX(i)),b:readPoint(pos,geo.index.getX(i+1)),c:readPoint(pos,geo.index.getX(i+2))};
+        }
     }
 }
 
@@ -178,16 +195,14 @@ class ColMesh implements WorldObject {
     constructor(public mesh: THREE.Mesh, public material = defaultMaterial) { }
     colisions(m: Marble): Colision[] {
         const res: Colision[] = [];
-        const o = m.position.v;
-        const r = new THREE.Raycaster(o, new THREE.Vector3(0, -1, 0), 0.001, m.size);
-        const f = faces(this.mesh);
-        for (let i in f) {
-            r.set(o, f[i].normal.clone().negate());
-            const ints = r.intersectObject(this.mesh);
-            for (let j in ints) {
-                res.push(new MaterialColision(new Point(ints[j].face.normal), this.material));
+        const o = m.position;
+        for (const {a,b,c} of faces(this.mesh)) {
+            const p = triNearest(o,a,b,c);
+            const de = triBarycentric(o,a,b,c);
+            const po = p.sub(o);
+            if (po.mag2() < m.size**2 && po.mag2() > 0){
+                res.push(new MaterialColision(new Point(po.norm(-1)), this.material));
             }
-
         }
         return res;
     }
