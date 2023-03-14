@@ -233,6 +233,7 @@ let squareMaterial = new THREE.MeshBasicMaterial({map: port1rts[1].texture});
 let squareMesh = new THREE.Mesh( squareGeometry, squareMaterial );
 squareMesh.position.copy(new THREE.Vector3(2,1,3));
 squareMesh.scale.copy(new THREE.Vector3(3,3,3));
+squareMesh.quaternion.fromArray([1,2,3,4],0).normalize();
 squareMesh.updateMatrix();
 three_scene.add(squareMesh);
 
@@ -250,12 +251,6 @@ class portalRenderer{
 	//let mat = this.self.matrixWorld / this.other.matrixWorld;
 	//
         //
-        //      •<\-z
-        //        \ \
-        //         \  | 
-        //          \ |
-        //           \|  
-        //
         let material = mesh.material;
 	material.map = this.rts[1].texture;
 	three_renderer.setRenderTarget(this.rts[0]);
@@ -270,10 +265,13 @@ class portalRenderer{
         //this.cam.filmGague = 1;
         //this.cam.filmOffset = -this.cam.position.x;
         //this.cam.fov;
-        this.cam.updateProjectionMatrix();
         this.cam.near = this.cam.position.z+this.epsilon;
-        mat.invert();
-        this.cam.position.applyMatrix4(mat);
+        this.cam.updateProjectionMatrix();
+        this.cam.position.copy(cam.position);
+        //mat.invert();
+        mat.setPosition(0,0,0);
+        this.cam.projectionMatrix.multiply(mat);
+        
         
         //this.cam.copy(cam);
 	//this.cam.matrixWorld.copy(camMat);
